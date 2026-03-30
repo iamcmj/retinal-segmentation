@@ -4,14 +4,27 @@ from PIL import Image
 import cv2
 from tqdm import tqdm
 
-MASK_EXTS = [".png", ".tif", ".gif"]
+MASK_EXTS = {".png", ".tif", ".tiff", ".gif", ".jpg", ".jpeg"}
+MASK_SUFFIXES = ["_mask", "_manual1", "_manual", "_1st_manual", "_manual_1"]
 
-def find_mask(mask_dir: Path, stem: str):
-    for ext in MASK_EXTS:
-        c = mask_dir / f"{stem}{ext}"
-        if c.exists():
-            return c
-    return None
+def build_mask_index(mask_dir: Path):
+    mask_index = {}
+    for mask_path in sorted(mask_dir.iterdir()):
+        if not mask_path.is_file() or mask_path.suffix.lower() not in MASK_EXTS:
+            continue
+
+        stem = mask_path.stem.lower()
+        candidate_keys = {stem}
+        for suffix in MASK_SUFFIXES:
+            if stem.endswith(suffix):
+                candidate_keys.add(stem[: -len(suffix)])
+
+        for key in candidate_keys:
+            mask_index.setdefault(key, mask_path)
+    return mask_index
+
+def find_mask(mask_index, stem: str):
+    return mask_index.get(stem.lower())
 
 def load_image(path: Path):
     img = cv2.imread(str(path))
@@ -62,7 +75,9 @@ def process_dataset(root: Path, size):
         out_mask.mkdir(parents=True, exist_ok=True)
 
         images = sorted(path for path in img_dir.glob("*") if path.is_file())
+        mask_index = build_mask_index(mask_dir)
         count = 0
+        skipped = 0
 
         for img_path in tqdm(
             images,
@@ -72,19 +87,25 @@ def process_dataset(root: Path, size):
             leave=False,
         ):
             stem = img_path.stem
-            mask_path = find_mask(mask_dir, stem)
+            mask_path = find_mask(mask_index, stem)
             if mask_path is None:
                 tqdm.write(f"  mask not found for {img_path.name}")
+                continue
+
+            out_img_path = out_img / f"{stem}.npy"
+            out_mask_path = out_mask / f"{stem}.npy"
+            if out_img_path.exists() and out_mask_path.exists():
+                skipped += 1
                 continue
 
             img = preprocess_image(img_path, size)
             mask = preprocess_mask(mask_path, size)
 
-            np.save(out_img / f"{stem}.npy", img)
-            np.save(out_mask / f"{stem}.npy", mask)
+            np.save(out_img_path, img)
+            np.save(out_mask_path, mask)
             count += 1
 
-        tqdm.write(f"{subset}: processed {count} image-mask pairs.")
+        tqdm.write(f"{subset}: processed {count} image-mask pairs, skipped {skipped}.")
 
 def main():
     dataset_root = Path("dataset")
