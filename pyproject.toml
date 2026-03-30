@@ -1,0 +1,32 @@
+[project]
+name = "retinal-segmentation"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ml-collections>=1.1.0",
+    "numpy>=2.4.4",
+    "pillow>=12.1.1",
+    "scipy>=1.17.1",
+    "tensorboardx>=2.6.4",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "tqdm>=4.67.3",
+]
+
+[project.optional-dependencies]
+tools = [
+    "matplotlib>=3.10.8",
+    "opencv-python>=4.13.0.92",
+]
+legacy = [
+    "h5py>=3.16.0",
+    "medpy>=0.5.2",
+    "simpleitk>=2.5.3",
+]
+
+[dependency-groups]
+dev = [
+    "tensorboard>=2.20.0",
+]
