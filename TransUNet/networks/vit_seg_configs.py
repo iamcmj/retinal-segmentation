@@ -18,7 +18,7 @@ def get_b16_config():
     config.pretrained_path = '../model/vit_checkpoint/imagenet21k/ViT-B_16.npz'
     config.patch_size = 16
 
-    config.decoder_channels = (256, 128, 64, 16)
+    config.decoder_channels = (256, 128, 64, 16) # decoder settings in TransUNet
     config.n_classes = 2
     config.activation = 'softmax'
     return config

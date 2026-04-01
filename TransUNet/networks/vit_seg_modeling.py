@@ -71,10 +71,14 @@ class Attention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states):
+        """hidden states shape: (B, n_patches, hidden)"""
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
 
+        """transpose_for_scores
+        (B, n_patches, hidden) → (B, n_patches, heads, head_dim) → (B, heads, n_patches, head_dim)
+        """
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
@@ -140,6 +144,7 @@ class Embeddings(nn.Module):
             self.hybrid = False
 
         if self.hybrid:
+            """hybrid: use CNN(ResNetV2) before Transformer layer"""
             self.hybrid_model = ResNetV2(block_units=config.resnet.num_layers, width_factor=config.resnet.width_factor)
             in_channels = self.hybrid_model.width * 16
         self.patch_embeddings = Conv2d(in_channels=in_channels,
@@ -156,8 +161,8 @@ class Embeddings(nn.Module):
             x, features = self.hybrid_model(x)
         else:
             features = None
-        x = self.patch_embeddings(x)  # (B, hidden. n_patches^(1/2), n_patches^(1/2))
-        x = x.flatten(2)
+        x = self.patch_embeddings(x)  # (B, hidden, n_patches^(1/2), n_patches^(1/2))
+        x = x.flatten(2)  # (B, hidden, n_patches)
         x = x.transpose(-1, -2)  # (B, n_patches, hidden)
 
         embeddings = x + self.position_embeddings
@@ -175,11 +180,13 @@ class Block(nn.Module):
         self.attn = Attention(config, vis)
 
     def forward(self, x):
+        """LayerNorm → MSA → Residual"""
         h = x
         x = self.attention_norm(x)
         x, weights = self.attn(x)
         x = x + h
 
+        """LayerNorm → MLP → Residual"""
         h = x
         x = self.ffn_norm(x)
         x = self.ffn(x)
@@ -231,7 +238,7 @@ class Encoder(nn.Module):
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
         for _ in range(config.transformer["num_layers"]):
-            layer = Block(config, vis)
+            layer = Block(config, vis)  # Transformer
             self.layer.append(copy.deepcopy(layer))
 
     def forward(self, hidden_states):
@@ -251,6 +258,7 @@ class Transformer(nn.Module):
         self.encoder = Encoder(config, vis)
 
     def forward(self, input_ids):
+        """Embeddings(CNN) + Encoder(Transformer)"""
         embedding_output, features = self.embeddings(input_ids)
         encoded, attn_weights = self.encoder(embedding_output)  # (B, n_patch, hidden)
         return encoded, attn_weights, features
@@ -278,6 +286,9 @@ class Conv2dReLU(nn.Sequential):
 
         bn = nn.BatchNorm2d(out_channels)
 
+        """Initialize nn.Sequential with layers
+        The module applies conv → batch norm → relu in order
+        """
         super(Conv2dReLU, self).__init__(conv, bn, relu)
 
 
@@ -309,7 +320,7 @@ class DecoderBlock(nn.Module):
     def forward(self, x, skip=None):
         x = self.up(x)
         if skip is not None:
-            x = torch.cat([x, skip], dim=1)
+            x = torch.cat([x, skip], dim=1)  # concatenate
         x = self.conv1(x)
         x = self.conv2(x)
         return x
@@ -373,6 +384,7 @@ class VisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.zero_head = zero_head
         self.classifier = config.classifier
+        """key: encoder(CNN + Transformer), decoder, segmentation head"""
         self.transformer = Transformer(config, img_size, vis)
         self.decoder = DecoderCup(config)
         self.segmentation_head = SegmentationHead(
